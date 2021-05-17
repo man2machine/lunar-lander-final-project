@@ -201,7 +201,7 @@ class LunarLander(gym.Env, EzPickle):
                 angle=(i * 0.05),
                 fixtures=fixtureDef(
                     shape=polygonShape(box=(LEG_W/SCALE, LEG_H/SCALE)),
-                    density=10.0,
+                    density=1.0,
                     restitution=0.0,
                     categoryBits=0x0020,
                     maskBits=0x001)
