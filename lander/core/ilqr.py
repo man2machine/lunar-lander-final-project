@@ -5,8 +5,54 @@ Created on Sat Apr 24 15:14:26 2021
 @author: Shahir
 """
 
-# python libraries
 import numpy as np
+
+u_l, u_r, u_u = 0, 0, 0
+eng_force_limits = [1, 1, 10]
+mass = 1
+w = 5
+h = 2
+
+box_poly = [(w/2, h/2),
+            (-w/2, h/2),
+            (-w/2, -h/2),
+            (w/2, -h/2)]
+box_poly = np.array(box_poly)
+
+moment_I = (1/12) * w*h*(w*w + h*h) * mass
+eng_points = [box_poly[0], box_poly[1], np.mean(box_poly[2:4])]
+eng_dirs = [(-1, 0), (1, 0), (0, 1)]
+center = (0, 0)
+
+controls = [u_l, u_r, u_u]
+eng_forces = [controls[i] * eng_force_limits[i] for i in range(3)]
+
+(x, x_d, y, y_d, t, t_x) = state = (0, 0, 0, 0, 0, 0)
+
+m = np
+
+for i in range(3):
+    f_local = eng_forces[i]
+    appl_point = eng_points[i]
+    appl_dir = eng_dirs[i] # local frame of ref
+    s, c = (m.sin(t), m.cos(t))
+    appl_dir_rot = (appl_dir[0] * c - appl_dir[1] * s, appl_dir[0] * s + appl_dir[1] * c) # global frame of ref
+
+    force_vec = (appl_dir_rot[0] * f_local[0], appl_dir_rot[0] * f_local[1])
+    center_to_eng = (appl_point[0] - center[0], appl_point[1] - center[1])
+    eng_to_center = (center[0] - appl_point[0], center[1] - appl_point[1])
+
+    proj_scale = force_vec[0] * eng_to_center[0] + force_vec[1] * eng_to_center[1]
+    proj_scale /= eng_to_center[0] * eng_to_center[0] + eng_to_center[1] * eng_to_center[1]
+    proj = (eng_to_center[0] * proj_scale, eng_to_center[1] * proj_scale)
+    cross = center_to_eng[0] * force_vec[1] + eng_to_center[1] * force_vec[0]
+
+    x_d = proj[0]
+    y_d = proj[1]
+    t_d = cross
+
+# python libraries
+
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
