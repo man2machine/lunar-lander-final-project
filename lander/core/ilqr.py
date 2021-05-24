@@ -27,7 +27,7 @@ center = (0, 0)
 controls = [u_l, u_r, u_u]
 eng_forces = [controls[i] * eng_force_limits[i] for i in range(3)]
 
-(x, x_d, y, y_d, t, t_x) = state = (0, 0, 0, 0, 0, 0)
+(x, x_d, y, y_d, t, t_d) = state = (0, 0, 0, 0, 0, 0)
 
 m = np
 
@@ -38,18 +38,18 @@ for i in range(3):
     s, c = (m.sin(t), m.cos(t))
     appl_dir_rot = (appl_dir[0] * c - appl_dir[1] * s, appl_dir[0] * s + appl_dir[1] * c) # global frame of ref
 
-    force_vec = (appl_dir_rot[0] * f_local[0], appl_dir_rot[0] * f_local[1])
+    force_vec = (appl_dir_rot[0] * f_local, appl_dir_rot[1] * f_local)
     center_to_eng = (appl_point[0] - center[0], appl_point[1] - center[1])
     eng_to_center = (center[0] - appl_point[0], center[1] - appl_point[1])
 
     proj_scale = force_vec[0] * eng_to_center[0] + force_vec[1] * eng_to_center[1]
     proj_scale /= eng_to_center[0] * eng_to_center[0] + eng_to_center[1] * eng_to_center[1]
     proj = (eng_to_center[0] * proj_scale, eng_to_center[1] * proj_scale)
-    cross = center_to_eng[0] * force_vec[1] + eng_to_center[1] * force_vec[0]
+    cross = center_to_eng[0] * force_vec[1] - center_to_eng[1] * force_vec[0]
 
-    x_d = proj[0]
-    y_d = proj[1]
-    t_d = cross
+    x_d += proj[0]
+    y_d += proj[1]
+    t_d += cross
 
 # python libraries
 
