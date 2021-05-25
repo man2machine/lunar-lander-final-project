@@ -1,5 +1,5 @@
-import gym
-from lunar_lander_old3 import LunarLander, LunarLanderContinuous
+
+from lunar_lander_old3 import LunarLanderContinuous
 from stable_baselines3 import PPO
 
 env = LunarLanderContinuous()

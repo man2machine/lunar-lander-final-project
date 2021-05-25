@@ -20,9 +20,9 @@ from gym.utils import seeding, EzPickle
 
 SIMULATION_RATE = 10
 INITIAL_RANDOM_VEL = 30
-W, H = 34, 28
+W, H = 1.1333, 0.933
 GRAVITY = 10
-LANDER_MASS = 5
+LANDER_MASS = 5.28888
 LANDER_POLY = np.array([
     [W/2, H/2],
     [-W/2, H/2],
@@ -31,7 +31,7 @@ LANDER_POLY = np.array([
 ])
 # ENGINE_FORCE_LIMITS = np.array([2, 2, 10]) * GRAVITY * LANDER_MASS
 # ENGINE_FORCE_LIMITS = np.array([4.5, 4.5, 36]) * GRAVITY * LANDER_MASS
-ENGINE_FORCE_LIMITS = np.array([.15, .15, 1.2]) * GRAVITY * LANDER_MASS * 15
+ENGINE_FORCE_LIMITS = np.array([.12, .12, 1.1]) * GRAVITY * LANDER_MASS
 
 LANDER_CENTER = np.array([0, 0])
 LANDER_MOMENT_I = (1/12) * (W*W + H*H) * LANDER_MASS
@@ -46,9 +46,9 @@ ENGINE_DIRS = np.array([
     [0, 1]
 ])
 
-VIEWPORT_W = 600
-VIEWPORT_H = 400
-HELIPAD_SIZE = 50
+VIEWPORT_W = 20
+VIEWPORT_H = 13.333
+HELIPAD_SIZE = 1.6666
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -209,7 +209,7 @@ class LunarLander(gym.Env):
 
             x_d[1] += force_proj[0] / LANDER_MASS
             x_d[3] += force_proj[1] / LANDER_MASS
-            x_d[5] += force_cross #/ LANDER_MOMENT_I
+            x_d[5] += force_cross / LANDER_MOMENT_I
         
         if return_info:
             return x_d, forces, force_locs
@@ -286,7 +286,7 @@ class LunarLander(gym.Env):
     def render(self, mode='human'):
         from gym.envs.classic_control import rendering
         if self.viewer is None:
-            self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
+            self.viewer = rendering.Viewer(600, 400)
             self.viewer.set_bounds(0, VIEWPORT_W, 0, VIEWPORT_H)
 
         for obj in self.particles:

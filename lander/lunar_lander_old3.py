@@ -38,8 +38,9 @@ from gym.utils import seeding, EzPickle
 
 FPS = 50
 SCALE = 30.0   # affects how fast-paced the game is, forces should be adjusted as well
+#SCALE = 1
 
-MAIN_ENGINE_POWER = 13.0 * 4
+MAIN_ENGINE_POWER = 5.2 * 10
 SIDE_ENGINE_POWER = 0.6 * 10
 
 INITIAL_RANDOM_FORCE = 1000.0   # Set 1500 to make game harder
@@ -101,7 +102,7 @@ class LunarLander(gym.Env, EzPickle):
         # Action is two floats [main engine, left-right engines].
         # Main engine: -1..0 off, 0..+1 throttle from 50% to 100% power. Engine can't work with less than 50% power.
         # Left-right:  -1.0..-0.5 fire left engine, +0.5..+1.0 fire right engine, -0.5..0.5 off
-        self.action_space = spaces.Box(-1, +1, (3,), dtype=np.float32)
+        self.action_space = spaces.Box(0, +1, (3,), dtype=np.float32)
 
         self.reset()
 
@@ -181,7 +182,7 @@ class LunarLander(gym.Env, EzPickle):
         # self.lander.ApplyForceToCenter( (
         #     -500,
         #     200
-        #     ), True)
+        # ), True)
         self.drawlist = [self.lander]
 
         return self.step(np.array([0, 0, 0]))[0]
@@ -222,21 +223,24 @@ class LunarLander(gym.Env, EzPickle):
                                     impulse_pos[1],
                                     m_power)  # particles are just a decoration
         impulse = (-ox * MAIN_ENGINE_POWER * m_power / SCALE, -oy * MAIN_ENGINE_POWER * m_power / SCALE)
+        #print(np.array(impulse) * FPS)
         p.ApplyLinearImpulse((-impulse[0], -impulse[1]),
                                 impulse_pos,
                                 True)
-        self.lander.ApplyLinearImpulse(impulse,
+        # self.lander.ApplyLinearImpulse(impulse,
+        #                                 impulse_pos,
+        #                                 True)
+        self.lander.ApplyForce((impulse[0] * FPS, impulse[1] * FPS),
                                         impulse_pos,
                                         True)
+        
         
         # Orientation engines
         for a, d in zip([action[1], action[2]], [-1, 1]):
             direction = d
             s_power = np.clip(a, 0.0, 1.0)
-            ox = side[0] * (direction )
-            oy =  -side[1] * (direction )
-            impulse_pos = (self.lander.position[0] + ox - tip[0] * 17/SCALE,
-                            self.lander.position[1] + oy + tip[1] * SIDE_ENGINE_HEIGHT/SCALE)
+            ox = side[0] * direction
+            oy =  -side[1] * direction
             impulse_pos = (self.lander.position[0] + ox * SIDE_ENGINE_HEIGHT/SCALE - tip[0] * SIDE_ENGINE_AWAY/SCALE,
                             self.lander.position[1] + oy * SIDE_ENGINE_AWAY/SCALE + tip[1] * SIDE_ENGINE_HEIGHT/SCALE)
             impulse = (-ox * SIDE_ENGINE_POWER * s_power / SCALE, -oy * SIDE_ENGINE_POWER * s_power / SCALE)
@@ -246,9 +250,12 @@ class LunarLander(gym.Env, EzPickle):
                 p.ApplyLinearImpulse((-impulse[0], -impulse[1]),
                                         impulse_pos
                                         , True)
-            self.lander.ApplyLinearImpulse(impulse,
-                                            impulse_pos,
-                                            True)
+            # self.lander.ApplyLinearImpulse(impulse,
+            #                                 impulse_pos,
+            #                                 True)
+            self.lander.ApplyForce((impulse[0] * FPS, impulse[1] * FPS),
+                                        impulse_pos,
+                                        True)
 
         self.world.Step(1.0/FPS, 6*30, 2*30)
 
@@ -256,11 +263,20 @@ class LunarLander(gym.Env, EzPickle):
         vel = self.lander.linearVelocity
         state = [
             (pos.x - VIEWPORT_W/SCALE/2) / (VIEWPORT_W/SCALE/2),
-            (pos.y - (self.helipad_y+LEG_DOWN/SCALE)) / (VIEWPORT_H/SCALE/2),
+            (pos.y - (self.helipad_y)) / (VIEWPORT_H/SCALE/2),
             vel.x*(VIEWPORT_W/SCALE/2)/FPS,
             vel.y*(VIEWPORT_H/SCALE/2)/FPS,
             self.lander.angle,
             20.0*self.lander.angularVelocity/FPS,
+        ]
+
+        state = [
+            (pos.x - VIEWPORT_W/SCALE/2) / (VIEWPORT_W/SCALE/2),
+            (pos.y - self.helipad_y) / (VIEWPORT_H/SCALE/2),
+            vel.x / (VIEWPORT_W/SCALE/2),
+            vel.y / (VIEWPORT_H/SCALE/2),
+            self.lander.angle,
+            self.lander.angularVelocity,
         ]
 
         reward = 0
@@ -358,9 +374,9 @@ def heuristic(env, s):
     angle_targ = s[0]*0.5 + s[2]*1.0         # angle should point towards center
     if angle_targ > 0.4: angle_targ = 0.4    # more than 0.4 radians (22 degrees) is bad
     if angle_targ < -0.4: angle_targ = -0.4
-    hover_targ = 0.1*np.abs(s[0])           # target y should be proportional to horizontal offset
+    hover_targ = 0.55*np.abs(s[0])           # target y should be proportional to horizontal offset
 
-    angle_todo = (angle_targ - s[4]) * 0.5 - (s[5])*1.0
+    angle_todo = (angle_targ - s[4]) * 0.5 - (s[5])*0.5
     hover_todo = (hover_targ - s[1])*0.5 - (s[3])*0.5
 
     angle_todo *= 10
@@ -385,12 +401,14 @@ def demo_heuristic_lander(env, seed=None, render=False):
         a = heuristic(env, s)
         s, r, done, info = env.step(a)
         total_reward += r
+        print(a)
 
         if render:
             still_open = env.render()
             if still_open == False: break
 
         if steps % 20 == 0 or done:
+            
             print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
             print("step {} total_reward {:+0.2f}".format(steps, total_reward))
         steps += 1
@@ -399,4 +417,5 @@ def demo_heuristic_lander(env, seed=None, render=False):
 
 
 if __name__ == '__main__':
-    demo_heuristic_lander(LunarLanderContinuous(), render=True)
+    env = LunarLanderContinuous()
+    demo_heuristic_lander(env, render=True)

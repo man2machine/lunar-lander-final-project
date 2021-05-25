@@ -18,10 +18,10 @@ import gym
 from gym import spaces
 from gym.utils import seeding, EzPickle
 
-SIMULATION_RATE = 10
+SIMULATION_RATE = 50
 INITIAL_RANDOM_VEL = 30
 W, H = 34, 28
-GRAVITY = 10
+GRAVITY = 300
 LANDER_MASS = 5
 LANDER_POLY = np.array([
     [W/2, H/2],
@@ -29,10 +29,8 @@ LANDER_POLY = np.array([
     [-W/2, -H/2],
     [W/2, -H/2]
 ])
-# ENGINE_FORCE_LIMITS = np.array([2, 2, 10]) * GRAVITY * LANDER_MASS
-# ENGINE_FORCE_LIMITS = np.array([4.5, 4.5, 36]) * GRAVITY * LANDER_MASS
-ENGINE_FORCE_LIMITS = np.array([.15, .15, 1.2]) * GRAVITY * LANDER_MASS * 15
 
+ENGINE_FORCE_LIMITS = np.array([6, 6, 52]) * SIMULATION_RATE
 LANDER_CENTER = np.array([0, 0])
 LANDER_MOMENT_I = (1/12) * (W*W + H*H) * LANDER_MASS
 ENGINE_POINTS = np.array([
@@ -48,7 +46,7 @@ ENGINE_DIRS = np.array([
 
 VIEWPORT_W = 600
 VIEWPORT_H = 400
-HELIPAD_SIZE = 50
+HELIPAD_SIZE = 72
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -133,11 +131,12 @@ class LunarLander(gym.Env):
         self.lander.color2 = (0.3, 0.3, 0.5)
 
         self.drawlist = [self.lander]
+
         self.x = np.array([
             initial_x_world - self.world_origin[0],
-            15,
+            np.random.uniform(-3000, 3000) / SIMULATION_RATE,
             initial_y_world - self.world_origin[1],
-            0,
+            np.random.uniform(-3000, 3000) / SIMULATION_RATE,
             0,
             0
         ])
@@ -209,7 +208,7 @@ class LunarLander(gym.Env):
 
             x_d[1] += force_proj[0] / LANDER_MASS
             x_d[3] += force_proj[1] / LANDER_MASS
-            x_d[5] += force_cross #/ LANDER_MOMENT_I
+            x_d[5] += force_cross / LANDER_MOMENT_I
         
         if return_info:
             return x_d, forces, force_locs
@@ -237,7 +236,6 @@ class LunarLander(gym.Env):
             squash_controls=False, return_info=True)
         x_next = self.x + x_d * dt
         self.x = x_next
-        #print(state)
 
         shift = np.array([self.x[0] + self.world_origin[0], self.x[2] + self.world_origin[1]])
         self.lander.position.x = shift[0]
@@ -245,15 +243,15 @@ class LunarLander(gym.Env):
         self.lander.angle = self.x[4]
 
         if apply_anim:
-            for u_i, f, loc in zip(action, forces, force_locs):
-                if np.linalg.norm(f) == 0:
-                    continue
-                force_loc_world = loc + shift
-                p = self._create_particle(1, force_loc_world[0], force_loc_world[1], u_i * 3)
-                impulse = -f
-                #print(impulse, u_i)
-                #p.ApplyForceToCenter(impulse, True)
-                p.ApplyLinearImpulse(impulse, force_loc_world, True)
+            # for u_i, f, loc in zip(action, forces, force_locs):
+            #     if np.linalg.norm(f) == 0:
+            #         continue
+            #     force_loc_world = loc + shift
+            #     p = self._create_particle(1, force_loc_world[0], force_loc_world[1], u_i * 3)
+            #     impulse = -f
+            #     #print(impulse, u_i)
+            #     #p.ApplyForceToCenter(impulse, True)
+            #     p.ApplyLinearImpulse(impulse, force_loc_world, True)
 
             self.world.Step(dt, 6*30, 2*30)
         
@@ -367,7 +365,7 @@ def demo_heuristic_lander(env, seed=None, render=False):
             still_open = env.render()
             if still_open == False:
                 break
-        print(s, a)
+        
         if steps % 20 == 0 or done:
             print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
             print("step {} total_reward {:+0.2f}".format(steps, total_reward))
