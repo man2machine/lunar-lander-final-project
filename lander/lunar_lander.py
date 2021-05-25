@@ -164,21 +164,15 @@ class LunarLander(gym.Env):
     def _clean_particles(self, all):
         while self.particles and (all or self.particles[0].ttl < 0):
             self.world.DestroyBody(self.particles.pop(0))
-    
-    def _sigmoid(x, m):
-        return 1 / (1 + m.exp(-x))
 
-    def continuous_dynamics(self, x, u, m, squash_controls=False, return_info=False):
+    def continuous_dynamics(self, x, u, m=np, return_info=False):
         # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
-        # u = [left thrust, right thrust, upwards thrust]
+        # u = [left thrust, right thrust, upwards thrust] (each bounded from 0 to 1)
         x = x.copy()
         x[0] *= self.raw_to_pix_scale[0]
         x[1] *= self.raw_to_pix_scale[0]
         x[2] *= self.raw_to_pix_scale[1]
         x[3] *= self.raw_to_pix_scale[1]
-        if squash_controls:
-            # squashing as suggested by https://github.com/anassinator/ilqr/issues/11
-            u = self._sigmoid(u, m)
         eng_force_mags = u * ENGINE_FORCE_LIMITS
         x_d = np.array([
             x[1],
@@ -224,9 +218,9 @@ class LunarLander(gym.Env):
             return x_d, forces, force_locs
         return x_d
     
-    def discrete_dynamics(self, x, u, m, squash_controls=False):
+    def discrete_dynamics(self, x, u, m=np):
         dt = 1 / SIMULATION_RATE
-        x_next = x + self.continuous_dynamics(x, u, m, squash_controls=squash_controls) * dt
+        x_next = x + self.continuous_dynamics(x, u, m) * dt
         return x_next
     
     def detect_collision(self):
@@ -244,7 +238,7 @@ class LunarLander(gym.Env):
     def step(self, action, apply_anim=False):
         action = np.clip(action, 0, 1)
         dt = 1 / SIMULATION_RATE
-        x_d, forces, force_locs = self.continuous_dynamics(self.x, action, np,
+        x_d, forces, force_locs = self.continuous_dynamics(self.x, action,
             squash_controls=False, return_info=True)
         x_next = self.x + x_d * dt
         self.x = x_next
