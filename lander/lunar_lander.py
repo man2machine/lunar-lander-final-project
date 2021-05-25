@@ -18,10 +18,10 @@ import gym
 from gym import spaces
 from gym.utils import seeding, EzPickle
 
-SIMULATION_RATE = 10
-INITIAL_RANDOM_VEL = 30
+SIMULATION_RATE = 50
+INITIAL_RANDOM_FORCE = 3000
 W, H = 34, 28
-GRAVITY = 10
+GRAVITY = 300
 LANDER_MASS = 5
 LANDER_POLY = np.array([
     [W/2, H/2],
@@ -29,10 +29,8 @@ LANDER_POLY = np.array([
     [-W/2, -H/2],
     [W/2, -H/2]
 ])
-# ENGINE_FORCE_LIMITS = np.array([2, 2, 10]) * GRAVITY * LANDER_MASS
-# ENGINE_FORCE_LIMITS = np.array([4.5, 4.5, 36]) * GRAVITY * LANDER_MASS
-ENGINE_FORCE_LIMITS = np.array([.15, .15, 1.2]) * GRAVITY * LANDER_MASS * 15
 
+ENGINE_FORCE_LIMITS = np.array([6, 6, 52]) * SIMULATION_RATE
 LANDER_CENTER = np.array([0, 0])
 LANDER_MOMENT_I = (1/12) * (W*W + H*H) * LANDER_MASS
 ENGINE_POINTS = np.array([
@@ -48,7 +46,7 @@ ENGINE_DIRS = np.array([
 
 VIEWPORT_W = 600
 VIEWPORT_H = 400
-HELIPAD_SIZE = 50
+HELIPAD_SIZE = 72
 
 class ContactDetector(contactListener):
     def __init__(self, env):
@@ -97,9 +95,12 @@ class LunarLander(gym.Env):
         self.game_over = False
         self.prev_shaping = None
 
-        self.helipad_y = VIEWPORT_H/4
-        terrain_x = [0, VIEWPORT_W]
-        terrain_y = [self.helipad_y, self.helipad_y]
+        self.raw_to_pix_scale = np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
+        self.raw_to_rl_scale = np.array([1, 1])
+
+        self.helipad_y = VIEWPORT_H / 4
+        self.terrain_x = [0, VIEWPORT_W]
+        self.terrain_y = [self.helipad_y, self.helipad_y]
         self.world_origin = np.array([VIEWPORT_W/2, self.helipad_y])
 
         self.helipad_x1 = self.world_origin[0] - HELIPAD_SIZE / 2
@@ -107,9 +108,9 @@ class LunarLander(gym.Env):
 
         self.moon = self.world.CreateStaticBody(shapes=edgeShape(vertices=[(0, 0), (VIEWPORT_W, 0)]))
         self.sky_polys = []
-        for i in range(len(terrain_x)-1):
-            p1 = (terrain_x[i], terrain_y[i])
-            p2 = (terrain_x[i+1], terrain_y[i+1])
+        for i in range(len(self.terrain_x)-1):
+            p1 = (self.terrain_x[i], self.terrain_y[i])
+            p2 = (self.terrain_x[i+1], self.terrain_y[i+1])
             self.moon.CreateEdgeFixture(
                 vertices=[p1, p2],
                 density=0
@@ -133,14 +134,21 @@ class LunarLander(gym.Env):
         self.lander.color2 = (0.3, 0.3, 0.5)
 
         self.drawlist = [self.lander]
-        self.x = np.array([
+
+        f = self.rng.uniform(-INITIAL_RANDOM_FORCE, INITIAL_RANDOM_FORCE, 2)
+        x_pix = np.array([
             initial_x_world - self.world_origin[0],
-            15,
+            f[0] / SIMULATION_RATE,
             initial_y_world - self.world_origin[1],
-            0,
+            f[1] / SIMULATION_RATE,
             0,
             0
         ])
+        self.x = x_pix.copy()
+        self.x[0] /= self.raw_to_pix_scale[0]
+        self.x[1] /= self.raw_to_pix_scale[0]
+        self.x[2] /= self.raw_to_pix_scale[1]
+        self.x[3] /= self.raw_to_pix_scale[1]
 
         return self.x
 
@@ -154,7 +162,7 @@ class LunarLander(gym.Env):
                 friction=0.1,
                 categoryBits=0x0100,
                 maskBits=0x001, # collide only with ground
-                restitution=0.3
+                restitution=0
             )
         )
         p.ttl = ttl
@@ -172,6 +180,11 @@ class LunarLander(gym.Env):
     def continuous_dynamics(self, x, u, m, squash_controls=False, return_info=False):
         # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
         # u = [left thrust, right thrust, upwards thrust]
+        x = x.copy()
+        x[0] *= self.raw_to_pix_scale[0]
+        x[1] *= self.raw_to_pix_scale[0]
+        x[2] *= self.raw_to_pix_scale[1]
+        x[3] *= self.raw_to_pix_scale[1]
         if squash_controls:
             # squashing as suggested by https://github.com/anassinator/ilqr/issues/11
             u = self._sigmoid(u, m)
@@ -209,9 +222,14 @@ class LunarLander(gym.Env):
 
             x_d[1] += force_proj[0] / LANDER_MASS
             x_d[3] += force_proj[1] / LANDER_MASS
-            x_d[5] += force_cross #/ LANDER_MOMENT_I
+            x_d[5] += force_cross / LANDER_MOMENT_I
         
-        if return_info:
+        x_d[0] /= self.raw_to_pix_scale[0]
+        x_d[1] /= self.raw_to_pix_scale[0]
+        x_d[2] /= self.raw_to_pix_scale[1]
+        x_d[3] /= self.raw_to_pix_scale[1]
+        
+        if return_info: # info is in pix coordinates
             return x_d, forces, force_locs
         return x_d
     
@@ -229,53 +247,46 @@ class LunarLander(gym.Env):
                 return True
         return False
 
-    def step(self, action, apply_anim=True):
+    def step(self, action, apply_anim=False):
         action = np.clip(action, 0, 1)
-        #print(action)
         dt = 1 / SIMULATION_RATE
         x_d, forces, force_locs = self.continuous_dynamics(self.x, action, np,
             squash_controls=False, return_info=True)
         x_next = self.x + x_d * dt
         self.x = x_next
-        #print(state)
 
-        shift = np.array([self.x[0] + self.world_origin[0], self.x[2] + self.world_origin[1]])
+        shift = np.array([
+            self.x[0] * self.raw_to_pix_scale[0] + self.world_origin[0],
+            self.x[2] * self.raw_to_pix_scale[1] + self.world_origin[1]
+        ])
         self.lander.position.x = shift[0]
         self.lander.position.y = shift[1]
         self.lander.angle = self.x[4]
 
         if apply_anim:
-            for u_i, f, loc in zip(action, forces, force_locs):
-                if np.linalg.norm(f) == 0:
-                    continue
-                force_loc_world = loc + shift
-                p = self._create_particle(1, force_loc_world[0], force_loc_world[1], u_i * 3)
-                impulse = -f
-                #print(impulse, u_i)
-                #p.ApplyForceToCenter(impulse, True)
-                p.ApplyLinearImpulse(impulse, force_loc_world, True)
-
+            # for u_i, f, loc, f_lim in zip(action, forces, force_locs, ENGINE_FORCE_LIMITS):
+            #     if np.linalg.norm(f) == 0:
+            #         continue
+            #     force_loc_world = loc + shift
+            #     p = self._create_particle(1e-12, force_loc_world[0], force_loc_world[1], u_i * 0.5)
+            #     impulse = -f / f_lim * 25 * 1e30
+            #     # if np.linalg.norm(impulse) > 50:
+            #     #     impulse /= np.linalg.norm(impulse)
+            #     # print(u_i)
+            #     print(impulse)
+            #     #print(impulse, u_i)
+            #     #print(p.mass)
+            #     p.ApplyForceToCenter(impulse, True)
+            #     #p.ApplyLinearImpulse(impulse, force_loc_world, True)
+            # print()
             self.world.Step(dt, 6*30, 2*30)
         
-        state = [
-            self.x[0] / (VIEWPORT_W/2),
-            self.x[1] / (VIEWPORT_W/2),
-            self.x[2] / (VIEWPORT_H/2),
-            self.x[3] / (VIEWPORT_H/2),
-            self.x[4],
-            self.x[5],
-        ]
+        state = self.x.tolist()
+        state[0] *= self.raw_to_rl_scale[0]
+        state[1] *= self.raw_to_rl_scale[0]
+        state[2] *= self.raw_to_rl_scale[1]
+        state[3] *= self.raw_to_rl_scale[1]
 
-        # state = [
-        #     self.x[0],
-        #     self.x[1],
-        #     self.x[2],
-        #     self.x[3],
-        #     self.x[4],
-        #     self.x[5],
-        # ]
-        #print(state)
-        
         reward = 0
         done = False
         if self.detect_collision():
@@ -331,7 +342,6 @@ class LunarLanderContinuous(LunarLander):
     continuous = True
 
 def heuristic(x):
-    #return np.array([0, 0, 0])
     angle_targ = x[0] * 0.5 + x[1] * 1.0 # angle should point towards center
     angle_targ = np.clip(angle_targ, -0.4, 0.4) # more than 0.4 radians (22 degrees) is bad
     hover_targ = 0.55 * np.abs(x[0]) # target y should be proportional to horizontal offset
@@ -367,10 +377,10 @@ def demo_heuristic_lander(env, seed=None, render=False):
             still_open = env.render()
             if still_open == False:
                 break
-        print(s, a)
+        
         if steps % 20 == 0 or done:
-            print("observations:", " ".join(["{:+0.2f}".format(x) for x in s]))
-            print("step {} total_reward {:+0.2f}".format(steps, total_reward))
+            print("observations:", " ".join(["{:+0.3f}".format(x) for x in s]))
+            print("step {} total_reward {:+0.3f}".format(steps, total_reward))
         steps += 1
         if done:
             break
