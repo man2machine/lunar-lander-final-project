@@ -12,7 +12,7 @@ import math
 import numpy as np
 
 import Box2D
-from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, weldJointDef, contactListener)
+from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape)
 
 import gym
 from gym import spaces
@@ -46,16 +46,7 @@ ENGINE_DIRS = np.array([
 
 VIEWPORT_W = 600
 VIEWPORT_H = 400
-HELIPAD_SIZE = 72
-
-class ContactDetector(contactListener):
-    def __init__(self, env):
-        contactListener.__init__(self)
-        self.env = env
-
-    def BeginContact(self, contact):
-        if self.env.lander == contact.fixtureA.body or self.env.lander == contact.fixtureB.body:
-            self.env.game_over = True
+HELIPAD_SIZE = 100
 
 class LunarLander(gym.Env):
     def __init__(self):
@@ -246,6 +237,9 @@ class LunarLander(gym.Env):
             if p[1] < self.helipad_y:
                 return True
         return False
+    
+    def detect_out_of_bounds(self):
+        return np.abs(self.x[0]) > 1
 
     def step(self, action, apply_anim=False):
         action = np.clip(action, 0, 1)
@@ -288,9 +282,24 @@ class LunarLander(gym.Env):
         state[3] *= self.raw_to_rl_scale[1]
 
         reward = 0
+        shaping = \
+            - 100*np.sqrt(state[0]*state[0] + state[2]*state[2]) \
+            - 100*np.sqrt(state[1]*state[1] + state[3]*state[3]) \
+            - 100*abs(state[4])
+        if self.prev_shaping is not None:
+            reward = shaping - self.prev_shaping
+        self.prev_shaping = shaping
+
+        reward -= action[0] * 0.30  # less fuel spent is better, about -30 for heuristic landing
+        reward -= (action[1] + action[1]) * 0.03
+
         done = False
-        if self.detect_collision():
+        if self.detect_collision() or self.detect_out_of_bounds():
             done = True
+            if self.helipad_x1 < shift[0] < self.helipad_x2:
+                reward = 100
+            else:
+                reward = -100
         
         return state, reward, done, {}
 
