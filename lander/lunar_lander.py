@@ -19,7 +19,7 @@ from gym import spaces
 from gym.utils import seeding, EzPickle
 
 SIMULATION_RATE = 50
-INITIAL_RANDOM_FORCE = 3000
+INITIAL_RANDOM_FORCE = 5000
 W, H = 34, 28
 GRAVITY = 300
 LANDER_MASS = 5
@@ -223,6 +223,9 @@ class LunarLander(gym.Env):
         x_next = x + self.continuous_dynamics(x, u, m) * dt
         return x_next
     
+    def get_state(self):
+        return self.x
+    
     def detect_collision(self):
         f = self.lander.fixtures[0]
         trans = f.body.transform
@@ -239,7 +242,7 @@ class LunarLander(gym.Env):
         action = np.clip(action, 0, 1)
         dt = 1 / SIMULATION_RATE
         x_d, forces, force_locs = self.continuous_dynamics(self.x, action,
-            squash_controls=False, return_info=True)
+            return_info=True)
         x_next = self.x + x_d * dt
         self.x = x_next
 
@@ -290,7 +293,7 @@ class LunarLander(gym.Env):
         done = False
         if self.detect_collision() or self.detect_out_of_bounds():
             done = True
-            if self.helipad_x1 < shift[0] < self.helipad_x2:
+            if (self.helipad_x1 < shift[0] < self.helipad_x2) and abs(self.x[4]) < np.pi / 6:
                 reward = 100
             else:
                 reward = -100
@@ -392,4 +395,6 @@ def demo_heuristic_lander(env, seed=None, render=False):
 
 if __name__ == '__main__':
     env = LunarLanderContinuous()
+    demo_heuristic_lander(env, render=True)
+    env.reset()
     demo_heuristic_lander(env, render=True)
