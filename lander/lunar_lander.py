@@ -415,7 +415,7 @@ def demo_heuristic_lander(env, render=False):
 
 
 if __name__ == '__main__':
-    env = LunarLanderContinuous()
+    env = LunarLander()
     env.seed(0)
     env.reset()
     demo_heuristic_lander(env, render=True)

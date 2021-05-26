@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from lander.lunar_lander import LunarLander
-from lander.ilqr import ILQRPlaybackPolicy, run_ilqr
 
 class LunarLanderRunner:
     def __init__(self, env, policy, max_iters=400):
@@ -39,7 +38,7 @@ class LunarLanderRunner:
         total_fuel = 0
         for i in range(self.max_iters):
             action = self.policy.predict(obs)
-            obs, reward, done, info = self.envenv.step(action)
+            obs, reward, done, info = self.env.step(action)
             if render:
                 self.env.render()
             num_steps += 1
@@ -48,13 +47,13 @@ class LunarLanderRunner:
             if done:
                 break
         
-        self.data['inside_helipad'] = self.env.detect_inside_helipad()
-        self.data['land_upright'] = self.env.detect_land_upright()
-        self.data['land_slowly'] = self.detect_land_slowly()
-        self.data['touched_ground'] = self.detect_collision()
-        self.data['out_of_bounds'] = self.detect_out_of_bounds()
-        self.data['num_steps'] = num_steps
-        self.data['end_state'] = self.env.get_state().to_list()
+        self.data['inside_helipad'] = bool(self.env.detect_inside_helipad())
+        self.data['land_upright'] = bool(self.env.detect_land_upright())
+        self.data['land_slowly'] = bool(self.env.detect_land_slowly())
+        self.data['touched_ground'] = bool(self.env.detect_collision())
+        self.data['out_of_bounds'] = bool(self.env.detect_out_of_bounds())
+        self.data['num_steps'] = int(num_steps)
+        self.data['end_state'] = self.env.get_state().tolist()
         self.data['total_reward'] = int(total_reward)
         self.data['total_fuel'] = float(total_fuel)
 
@@ -81,14 +80,16 @@ def calc_stats(runs, show=True):
         }
     
     for run in runs:
-        for metric in runs_np:
-            if runs_np[metric] is None:
-                runs_np[metric] = np.array([run[metric]])
+        metrics = run.get_metrics()
+        for name, val in metrics.items():
+            if runs_np[name] is None:
+                runs_np[name] = []
             else:
-                runs_np[metric] = np.append(runs_np[metric], run[metric])
+                runs_np[name].append(val)
+    
     stats = {}
-    for metric in runs_np:
-        stats[metric] = np.average(runs_np[metric])
+    for metric_name in runs_np:
+        stats[metric_name] = np.average(np.array(runs_np[metric_name]), axis=0)
     
     if show:
         print("Averages")
@@ -104,15 +105,17 @@ def calc_stats(runs, show=True):
         plt.title("Lunar Lander Fuel")
         plt.show()
 
-        costs = runs_np['ilqr_cost']
+        costs = runs_np['ilqr_final_cost']
         if costs[0] is not None:
             plt.hist(costs)
-            plt.title("Lunar Lander ILQR Cost")
+            plt.title("Lunar Lander ILQR Final Cost")
             plt.show()
 
     return runs_np, stats
 
-def run_ilqr_experiments(num_steps=150, num_runs=20):
+def run_ilqr_experiments(num_runs=20, num_steps=150):
+    from lander.ilqr import ILQRPlaybackPolicy, run_ilqr
+
     env = LunarLander()
 
     runners = []
