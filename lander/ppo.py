@@ -31,3 +31,10 @@ def get_ppo_model(env):
     model = PPO("MlpPolicy", env)
     return model
 
+
+class RLPolicyWrapper:
+    def __init__(self, model):
+        self.model = model
+    
+    def predict(self, s):
+        return self.model.predict(s, deterministic=True)[0]

@@ -304,8 +304,8 @@ class LunarLander(gym.Env):
             reward = shaping - self.prev_shaping
         self.prev_shaping = shaping
 
-        reward -= action[0] * 0.30  # less fuel spent is better, about -30 for heuristic landing
-        reward -= (action[1] + action[1]) * 0.03
+        reward -= action[2] * 0.30  # less fuel spent is better, about -30 for heuristic landing
+        reward -= (action[0] + action[1]) * 0.03
         info = {'fuel': np.sum(action * ENGINE_FORCE_LIMITS) / SIMULATION_RATE}
 
         done = False
@@ -313,7 +313,7 @@ class LunarLander(gym.Env):
             reward = 0
             done = True
             if self.detect_too_long():
-                reward -= 100
+                reward -= 15
             if self.detect_inside_helipad():
                 reward += 70
                 if self.detect_land_upright():

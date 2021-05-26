@@ -82,14 +82,16 @@ def calc_stats(runs, show=True):
     for run in runs:
         metrics = run.get_metrics()
         for name, val in metrics.items():
-            if runs_np[name] is None:
-                runs_np[name] = []
-            else:
-                runs_np[name].append(val)
+            if val is not None:
+                if runs_np[name] is None:
+                    runs_np[name] = []
+                else:
+                    runs_np[name].append(val)
     
     stats = {}
     for metric_name in runs_np:
-        stats[metric_name] = np.average(np.array(runs_np[metric_name]), axis=0)
+        if runs_np[metric_name] is not None:
+            stats[metric_name] = np.average(np.array(runs_np[metric_name]), axis=0)
     
     if show:
         print("Averages")
@@ -106,14 +108,14 @@ def calc_stats(runs, show=True):
         plt.show()
 
         costs = runs_np['ilqr_final_cost']
-        if costs[0] is not None:
+        if costs is not None:
             plt.hist(costs)
             plt.title("Lunar Lander ILQR Final Cost")
             plt.show()
 
     return runs_np, stats
 
-def run_ilqr_experiments(num_runs=20, num_steps=150):
+def run_ilqr_experiments(num_runs=50, num_steps=150):
     from lander.ilqr import ILQRPlaybackPolicy, run_ilqr
 
     env = LunarLander()
@@ -130,13 +132,13 @@ def run_ilqr_experiments(num_runs=20, num_steps=150):
     
     return runners
 
-def run_rl_experiments(model, num_runs=20):
+def run_rl_experiments(policy, num_runs=50):
     env = LunarLander()
 
     runners = []
     for _ in tqdm(range(num_runs)):
         env.reset()
-        runner = LunarLanderRunner(env, model)
+        runner = LunarLanderRunner(env, policy)
         runner.run()
         runners.append(runner)
     
