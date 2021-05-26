@@ -14,13 +14,14 @@ from pydrake.all import (Variable, SymbolicVectorSystem, DiagramBuilder,
                          MathematicalProgram, Solve, SnoptSolver, PiecewisePolynomial)
 import pydrake.symbolic as sym
 
-from lander.lunar_lander import LunarLander, H
+from lunar_lander_repo.lander.lunar_lander import LunarLander, H
 
 N_X = 6
 N_U = 3
 
 def sigmoid(x, m=np):
-    return 1 / (1 + m.exp(-x))
+    return [1/(1+m.exp(-x_i)) for x_i in x]
+    # return 1 / (1 + m.exp(-x))
 
 def rollout(env, x0, u_trj):
     x_trj = np.zeros((u_trj.shape[0]+1, x0.shape[0]))
@@ -140,7 +141,7 @@ def forward_pass(env, x_trj, u_trj, k_trj, K_trj):
     # TODO: Implement the forward pass here
     for n in range(u_trj.shape[0]):
         u_trj_new[n, :] = u_trj[n] + k_trj[n] + np.dot(K_trj[n], x_trj_new[n] - x_trj[n])
-        x_trj_new[n+1, :] = env.discrete_dynamics(x_trj_new[n], sigmoid(u_trj_new[n]), sym)
+        x_trj_new[n+1, :] = env.discrete_dynamics(x_trj_new[n], sigmoid(u_trj_new[n]))
     return x_trj_new, u_trj_new
 
 def backward_pass(derivs, x_trj, u_trj, regu):
@@ -199,7 +200,7 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
     for it in range(max_iter):
         # Backward and forward pass
         k_trj, K_trj, expected_cost_redu = backward_pass(derivs, x_trj, u_trj, regu)
-        x_trj_new, u_trj_new = forward_pass(x_trj, u_trj, k_trj, K_trj)
+        x_trj_new, u_trj_new = forward_pass(env, x_trj, u_trj, k_trj, K_trj)
         # Evaluate new trajectory
         total_cost = cost_trj(x_trj_new, u_trj_new)
         cost_redu = cost_trace[-1] - total_cost
