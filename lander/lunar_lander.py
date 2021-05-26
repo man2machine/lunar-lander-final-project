@@ -30,7 +30,7 @@ LANDER_POLY = np.array([
     [W/2, -H/2]
 ])
 
-ENGINE_FORCE_LIMITS = np.array([6, 6, 52]) * SIMULATION_RATE
+ENGINE_FORCE_LIMITS = np.array([1.2, 1.2, 10.2]) * LANDER_MASS * SIMULATION_RATE
 LANDER_CENTER = np.array([0, 0])
 LANDER_MOMENT_I = (1/12) * (W*W + H*H) * LANDER_MASS
 ENGINE_POINTS = np.array([
@@ -168,16 +168,16 @@ class LunarLander(gym.Env):
     def continuous_dynamics(self, x, u, m=np, return_info=False):
         # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
         # u = [left thrust, right thrust, upwards thrust] (each bounded from 0 to 1)
-        x = x.copy()
-        x[0] *= self.raw_to_pix_scale[0]
-        x[1] *= self.raw_to_pix_scale[0]
-        x[2] *= self.raw_to_pix_scale[1]
-        x[3] *= self.raw_to_pix_scale[1]
+        # x = x.copy()
+        # x[0] *= self.raw_to_pix_scale[0]
+        # x[1] *= self.raw_to_pix_scale[0]
+        # x[2] *= self.raw_to_pix_scale[1]
+        # x[3] *= self.raw_to_pix_scale[1]
         eng_force_mags = u * ENGINE_FORCE_LIMITS
         x_d = np.array([
-            x[1],
+            x[1] * self.raw_to_pix_scale[0],
             0,
-            x[3],
+            x[3] * self.raw_to_pix_scale[1],
             -GRAVITY,
             x[5],
             0
