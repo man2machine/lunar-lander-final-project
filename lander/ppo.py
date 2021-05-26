@@ -1,5 +1,5 @@
 
-from lunar_lander import LunarLander
+from lunar.lunar_lander import LunarLander
 from stable_baselines3 import PPO
 
 def get_ppo_model(env, timesteps=10000):

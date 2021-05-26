@@ -292,11 +292,14 @@ class LunarLander(gym.Env):
 
         done = False
         if self.detect_collision() or self.detect_out_of_bounds():
+            reward = 0
             done = True
-            if (self.helipad_x1 < shift[0] < self.helipad_x2) and abs(self.x[4]) < np.pi / 6:
-                reward = 100
+            if (self.helipad_x1 < shift[0] < self.helipad_x2):
+                reward += 70
+                if abs(self.x[4]) < np.pi / 12:
+                    reward += 30
             else:
-                reward = -100
+                reward -= 100
         
         return state, reward, done, {}
 
@@ -369,8 +372,7 @@ def heuristic(x):
 
     return u
 
-def demo_heuristic_lander(env, seed=None, render=False):
-    env.seed(seed)
+def demo_heuristic_lander(env, render=False):
     total_reward = 0
     steps = 0
     s = env.reset()
@@ -395,6 +397,8 @@ def demo_heuristic_lander(env, seed=None, render=False):
 
 if __name__ == '__main__':
     env = LunarLanderContinuous()
+    env.seed(0)
+    env.reset()
     demo_heuristic_lander(env, render=True)
     env.reset()
     demo_heuristic_lander(env, render=True)

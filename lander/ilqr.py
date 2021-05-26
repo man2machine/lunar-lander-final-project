@@ -173,10 +173,14 @@ def backward_pass(derivs, x_trj, u_trj, regu):
     return k_trj, K_trj, expected_cost_redu
 
 def run_ilqr(env, N, max_iter=50, regu_init=10):
-    # First forward rollout
-    x0 = env.x
+    # ilqr uses discrete dynamics directly from the env, instead of step
+    # this bypasses the normal simulation process, so there is no exit condition checking,
+    # to see if there are collissions or the lander is out of bounds
+
+    x0 = env.get_state()
     derivs = ILQRDerivatives(env, cost_stage, cost_final)
 
+    # First forward rollout
     u_trj = np.random.randn(N-1, N_U)*0.0001
     x_trj = rollout(env, x0, u_trj)
     total_cost = cost_trj(x_trj, u_trj)
@@ -224,10 +228,22 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
     return x_trj, u_trj, cost_trace, regu_trace, redu_ratio_trace, redu_trace
 
 class ILQRPlaybackPolicy:
-    def __init__(self, x_trj, u_trj):
+    def __init__(self, x_trj, u_trj, i=0):
         self.x_trj = x_trj
         self.u_trj = u_trj
-        self.i = 0
+        self.i = i
+    
+    def get_state(self):
+        data = {
+            'x': self.x_trj,
+            'u': self.u_trj,
+            'i': self.i
+        }
+        return data
+    
+    @classmethod
+    def load_state(cls, data):
+        return cls(data['x'], data['u'], data['i'])
 
     def predict(self, s):
         if self.i >= len(self.u_trj):
@@ -239,27 +255,47 @@ class ILQRPlaybackPolicy:
 class ILQRModelPredictivePolicy:
     def __init__(self, env):
         self.env = env
-        self._sub_policy = None
+        self._sub_policies = [None]
     
+    def get_state(self):
+        datas = []
+        for p in self._sub_policies:
+            if p:
+                datas.append(p.get_state())
+            else:
+                datas.append(None)
+
+    def load_state(self, datas):
+        self._sub_policies = []
+        for d in datas:
+            if d:
+                self._sub_policies.append(ILQRPlaybackPolicy.load_state(d))
+            else:
+                self._sub_policies.append(None)
+
+
     def predict(self, s):
-        if self._sub_policy is None:
+        policy = self._sub_policies[-1]
+        if policy is None:
             x_trj, u_trj, *_ = run_ilqr(self.env, 500)
-            self._sub_policy = ILQRPlaybackPolicy(x_trj, u_trj)
+            policy = ILQRPlaybackPolicy(x_trj, u_trj)
+            self._sub_policies[-1] = policy
         try:
-            a = self._sub_policy(s)
+            a = policy.predict(s)
         except StopIteration:
-            self._sub_policy = None
-            return self.policy(s)
+            self._sub_policies.append(None)
+            return self.predict(s)
         return a
 
 if __name__ == '__main__':
     env = LunarLander()
+    env.seed(0)
     env.reset()
-    
+
     num_steps = 1000
     x_trj, u_trj, cost_trace, regu_trace, redu_ratio_trace, redu_trace = run_ilqr(env, num_steps)
 
-    plt.subplots(figsize=(10,6))
+    plt.subplots(figsize=(10, 6))
     # Plot results
     plt.subplot(2, 2, 1)
     plt.plot(cost_trace)
