@@ -88,6 +88,8 @@ class LunarLander(gym.Env):
 
         self.raw_to_pix_scale = np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
         self.raw_to_rl_scale = np.array([1, 1])
+        self.raw_to_pix_scale = np.array([1, 1])
+        self.raw_to_rl_scale = 1 / np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
 
         self.helipad_y = VIEWPORT_H / 4
         self.terrain_x = [0, VIEWPORT_W]
@@ -236,7 +238,7 @@ class LunarLander(gym.Env):
         return False
     
     def detect_out_of_bounds(self):
-        return np.abs(self.x[0]) > 1
+        return np.abs(self.x[0]) * self.raw_to_pix_scale[0] > VIEWPORT_W / 2
 
     def step(self, action, apply_anim=False):
         action = np.clip(action, 0, 1)

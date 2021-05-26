@@ -18,8 +18,16 @@ from lunar_lander_repo.lander.lunar_lander import LunarLander, H
 
 N_X = 6
 N_U = 3
+eps = 1e-6 # The derivative of sqrt(x) at x=0 is undefined. Avoid by subtle smoothing
 
 def sigmoid(x, m=np):
+    if m == np:
+        output = []
+        for x_i in x:
+            c = np.clip(-x_i, -100, 100)
+            # print("clip", c)
+            output.append(1/(1+m.exp(c)))
+        return output
     return [1/(1+m.exp(-x_i)) for x_i in x]
     # return 1 / (1 + m.exp(-x))
 
@@ -32,38 +40,39 @@ def rollout(env, x0, u_trj):
         x_next = env.discrete_dynamics(x, sigmoid(u_trj[n]))
         x_trj[n + 1] = x_next
     return x_trj
-
-eps = 1e-6 # The derivative of sqrt(x) at x=0 is undefined. Avoid by subtle smoothing
+H, W = 28, 34
 def cost_stage(x, u):
     # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
     # u = [u_l, u_r, u_u]
     m = sym if x.dtype == object else np # Check type for autodiff
-    c_dest = 3*(x[0]**2 + (x[2] - H/2)**2)/(x[2] + eps)
+    c_dest = (x[0]**2 + x[2]**2)
     # c_dest += -x[2]
-    c_vel = (x[3]**2)*1
+    c_vel = (x[3]**2)*0.1
     # c_vel = 0
  
     u = sigmoid(u, m) # squashing as suggested by https://github.com/anassinator/ilqr/issues/11
     u_l, u_r, u_u = u[0], u[1], u[2]
     c_test = (1 - u_u) * (x[0]**2)
     c_control =  0.3 * (u_u**2)
+    c_control = 0
 
-    return c_dest + c_vel + c_control
+    return (c_dest + c_vel + c_control) * 10**(-4)
 
 def cost_final(x):
-    return 0
+    # return 0
     m = sym if x.dtype == object else np # Check type for autodiff
     c_dest = 5 * m.sqrt((x[0])**2 + (x[2])**2 + x[4]**2 + eps)
     c_vel = 1*(x[1]**2 + x[3]**2)
-    c_landing = 0
-    return 0
+    c_landing = (x[3]**2)*1
+    return c_landing * 10**(-3)
 
 def cost_trj(x_trj, u_trj):
     total = 0.0
     for n in range(u_trj.shape[0]):
         x = x_trj[n]
         u = u_trj[n]
-        total += cost_stage(x, u)
+        c = cost_stage(x, u)
+        total += c
     total += cost_final(x_trj[-1])
     return total
 
@@ -85,7 +94,7 @@ class ILQRDerivatives():
         self.l_final_x = sym.Jacobian([l_final], x).ravel()
         self.l_final_xx = sym.Jacobian(self.l_final_x, x)
         
-        f = env.discrete_dynamics(x, sigmoid(u), sym)
+        f = env.discrete_dynamics(x, sigmoid(u, sym), sym)
         self.f_x = sym.Jacobian(f, x)
         self.f_u = sym.Jacobian(f, u)
     
@@ -122,6 +131,8 @@ def Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx):
 
 def gains(Q_uu, Q_u, Q_ux):
     Q_uu_inv = np.linalg.inv(Q_uu)
+    # print("Q_uu = ", Q_uu)
+    # print("Q_uu_inv = ", Q_uu_inv)
     k = -np.dot(Q_uu_inv, Q_u.T)
     K = -np.dot(Q_uu_inv, Q_ux)
     return k, K
@@ -138,8 +149,8 @@ def forward_pass(env, x_trj, u_trj, k_trj, K_trj):
     x_trj_new = np.zeros(x_trj.shape)
     x_trj_new[0, :] = x_trj[0, :]
     u_trj_new = np.zeros(u_trj.shape)
-    # TODO: Implement the forward pass here
     for n in range(u_trj.shape[0]):
+        x = x_trj_new[n]
         u_trj_new[n, :] = u_trj[n] + k_trj[n] + np.dot(K_trj[n], x_trj_new[n] - x_trj[n])
         x_trj_new[n+1, :] = env.discrete_dynamics(x_trj_new[n], sigmoid(u_trj_new[n]))
     return x_trj_new, u_trj_new
@@ -155,15 +166,12 @@ def backward_pass(derivs, x_trj, u_trj, regu):
     l_final_x, l_final_xx = derivs.final(x_trj[N])
     V_x = l_final_x
     V_xx = l_final_xx
-    # print("no error")
     for n in range(u_trj.shape[0]-1, -1, -1):
-        # TODO: First compute derivatives, then the Q-terms
+        # First compute derivatives, then the Q-terms
         x = x_trj[n]
         u = u_trj[n]
         l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u = derivs.stage(x, u)
-        # print(f_u)
         Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
-        # print(Q_uu)
         # We add regularization to ensure that Q_uu is invertible and nicely conditioned
         Q_uu_regu = Q_uu + np.eye(Q_uu.shape[0])*regu
         k, K = gains(Q_uu_regu, Q_u, Q_ux)
@@ -182,7 +190,7 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
     derivs = ILQRDerivatives(env, cost_stage, cost_final)
 
     # First forward rollout
-    u_trj = np.random.randn(N-1, N_U)*0.0001
+    u_trj = np.random.randn(N-1, N_U)*0.1
     x_trj = rollout(env, x0, u_trj)
     total_cost = cost_trj(x_trj, u_trj)
     regu = regu_init
@@ -197,12 +205,15 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
     regu_trace = [regu]
     
     # Run main loop
+    print(max_iter)
     for it in range(max_iter):
+        print(it)
         # Backward and forward pass
         k_trj, K_trj, expected_cost_redu = backward_pass(derivs, x_trj, u_trj, regu)
         x_trj_new, u_trj_new = forward_pass(env, x_trj, u_trj, k_trj, K_trj)
         # Evaluate new trajectory
         total_cost = cost_trj(x_trj_new, u_trj_new)
+        print(total_cost)
         cost_redu = cost_trace[-1] - total_cost
         redu_ratio = cost_redu / abs(expected_cost_redu)
         # Accept or reject iteration
@@ -223,8 +234,8 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
         redu_trace.append(cost_redu)
 
         # Early termination if expected improvement is small
-        if expected_cost_redu <= 1e-6:
-            break
+        # if expected_cost_redu <= 1e-10:
+        #     break
             
     return x_trj, u_trj, cost_trace, regu_trace, redu_ratio_trace, redu_trace
 
