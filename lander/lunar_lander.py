@@ -59,6 +59,8 @@ class LunarLander(gym.Env):
         self.particles = []
 
         self.prev_reward = None
+        self.max_steps_reward = 300
+        self.num_steps = None
 
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(6,), dtype=np.float32)
         self.action_space = spaces.Box(0, 1, (3,), dtype=np.float32)
@@ -85,9 +87,11 @@ class LunarLander(gym.Env):
         # self.world.contactListener = self.world.contactListener_keepref
         self.game_over = False
         self.prev_shaping = None
+        self.num_steps = 0
 
-        self.raw_to_pix_scale = np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
-        self.raw_to_rl_scale = np.array([1, 1])
+        # self.raw_to_pix_scale = np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
+        # self.raw_to_rl_scale = np.array([1, 1])
+
         self.raw_to_pix_scale = np.array([1, 1])
         self.raw_to_rl_scale = 1 / np.array([VIEWPORT_H / 2, VIEWPORT_H / 2])
 
@@ -170,11 +174,6 @@ class LunarLander(gym.Env):
     def continuous_dynamics(self, x, u, m=np, return_info=False):
         # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
         # u = [left thrust, right thrust, upwards thrust] (each bounded from 0 to 1)
-        # x = x.copy()
-        # x[0] *= self.raw_to_pix_scale[0]
-        # x[1] *= self.raw_to_pix_scale[0]
-        # x[2] *= self.raw_to_pix_scale[1]
-        # x[3] *= self.raw_to_pix_scale[1]
         eng_force_mags = u * ENGINE_FORCE_LIMITS
         x_d = np.array([
             x[1] * self.raw_to_pix_scale[0],
@@ -215,6 +214,8 @@ class LunarLander(gym.Env):
         x_d[1] /= self.raw_to_pix_scale[0]
         x_d[2] /= self.raw_to_pix_scale[1]
         x_d[3] /= self.raw_to_pix_scale[1]
+
+        self.num_steps += 1
         
         if return_info: # info is in pix coordinates
             return x_d, forces, force_locs
@@ -239,6 +240,19 @@ class LunarLander(gym.Env):
     
     def detect_out_of_bounds(self):
         return np.abs(self.x[0]) * self.raw_to_pix_scale[0] > VIEWPORT_W / 2
+    
+    def detect_inside_helipad(self):
+        x_0_pix = self.x[0] * self.raw_to_pix_scale[0] + self.world_origin[0]
+        return self.helipad_x1 < x_0_pix < self.helipad_x2
+
+    def detect_land_slowly(self):
+        return np.abs(self.x[3]) * self.raw_to_rl_scale[0] < 0.2
+    
+    def detect_land_upright(self):
+        return abs(self.x[4]) < np.pi / 12
+    
+    def detect_too_long(self):
+        return self.num_steps > self.max_steps_reward
 
     def step(self, action, apply_anim=False):
         action = np.clip(action, 0, 1)
@@ -257,6 +271,7 @@ class LunarLander(gym.Env):
         self.lander.angle = self.x[4]
 
         if apply_anim:
+            pass
             # for u_i, f, loc, f_lim in zip(action, forces, force_locs, ENGINE_FORCE_LIMITS):
             #     if np.linalg.norm(f) == 0:
             #         continue
@@ -271,8 +286,7 @@ class LunarLander(gym.Env):
             #     #print(p.mass)
             #     p.ApplyForceToCenter(impulse, True)
             #     #p.ApplyLinearImpulse(impulse, force_loc_world, True)
-            # print()
-            self.world.Step(dt, 6*30, 2*30)
+            # self.world.Step(dt, 6*30, 2*30)
         
         state = self.x.tolist()
         state[0] *= self.raw_to_rl_scale[0]
@@ -280,6 +294,7 @@ class LunarLander(gym.Env):
         state[2] *= self.raw_to_rl_scale[1]
         state[3] *= self.raw_to_rl_scale[1]
 
+        info = {}
         reward = 0
         shaping = \
             - 100*np.sqrt(state[0]*state[0] + state[2]*state[2]) \
@@ -291,19 +306,24 @@ class LunarLander(gym.Env):
 
         reward -= action[0] * 0.30  # less fuel spent is better, about -30 for heuristic landing
         reward -= (action[1] + action[1]) * 0.03
+        info = {'fuel': np.sum(action * ENGINE_FORCE_LIMITS) / SIMULATION_RATE}
 
         done = False
         if self.detect_collision() or self.detect_out_of_bounds():
             reward = 0
             done = True
-            if (self.helipad_x1 < shift[0] < self.helipad_x2):
+            if self.detect_too_long():
+                reward -= 100
+            if self.detect_inside_helipad():
                 reward += 70
-                if abs(self.x[4]) < np.pi / 12:
+                if self.detect_land_upright():
+                    reward += 30
+                if self.detect_land_slowly():
                     reward += 30
             else:
                 reward -= 100
         
-        return state, reward, done, {}
+        return state, reward, done, info
 
     def render(self, mode='human'):
         from gym.envs.classic_control import rendering
@@ -348,9 +368,6 @@ class LunarLander(gym.Env):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
-
-class LunarLanderContinuous(LunarLander):
-    continuous = True
 
 def heuristic(x):
     angle_targ = x[0] * 0.5 + x[1] * 1.0 # angle should point towards center

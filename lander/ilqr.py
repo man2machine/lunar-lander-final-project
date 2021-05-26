@@ -14,7 +14,7 @@ from pydrake.all import (Variable, SymbolicVectorSystem, DiagramBuilder,
                          MathematicalProgram, Solve, SnoptSolver, PiecewisePolynomial)
 import pydrake.symbolic as sym
 
-from lunar_lander_repo.lander.lunar_lander import LunarLander, H
+from lander.lunar_lander import LunarLander, H
 
 N_X = 6
 N_U = 3
@@ -40,7 +40,7 @@ def rollout(env, x0, u_trj):
         x_next = env.discrete_dynamics(x, sigmoid(u_trj[n]))
         x_trj[n + 1] = x_next
     return x_trj
-H, W = 28, 34
+
 def cost_stage(x, u):
     # x = [x position, x velocity, y position, y velocity, angle, angular velocity] 
     # u = [u_l, u_r, u_u]
@@ -56,13 +56,13 @@ def cost_stage(x, u):
     c_control =  0.3 * (u_u**2)
     c_control = 0
 
-    return (c_dest + c_vel + c_control) * 10**(-4)
+    return (c_dest + c_vel + c_control) * 1e-4
 
 def cost_final(x):
     # return 0
     m = sym if x.dtype == object else np # Check type for autodiff
-    c_dest = 5 * m.sqrt((x[0])**2 + (x[2])**2 + x[4]**2 + eps)
-    c_vel = 1*(x[1]**2 + x[3]**2)
+    # c_dest = 5 * m.sqrt((x[0])**2 + (x[2])**2 + x[4]**2 + eps)
+    # c_vel = 1*(x[1]**2 + x[3]**2)
     c_landing = (x[3]**2)*1
     return c_landing * 10**(-3)
 
@@ -131,8 +131,6 @@ def Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx):
 
 def gains(Q_uu, Q_u, Q_ux):
     Q_uu_inv = np.linalg.inv(Q_uu)
-    # print("Q_uu = ", Q_uu)
-    # print("Q_uu_inv = ", Q_uu_inv)
     k = -np.dot(Q_uu_inv, Q_u.T)
     K = -np.dot(Q_uu_inv, Q_ux)
     return k, K
@@ -159,7 +157,7 @@ def backward_pass(derivs, x_trj, u_trj, regu):
     k_trj = np.zeros([u_trj.shape[0], u_trj.shape[1]])
     K_trj = np.zeros([u_trj.shape[0], u_trj.shape[1], x_trj.shape[1]])
     expected_cost_redu = 0
-    # TODO: Set terminal boundary condition here (V_x, V_xx)
+    # Set terminal boundary condition here (V_x, V_xx)
     V_x = np.zeros((x_trj.shape[1],))
     V_xx = np.zeros((x_trj.shape[1],x_trj.shape[1]))
     N = x_trj.shape[0] - 1
@@ -205,15 +203,12 @@ def run_ilqr(env, N, max_iter=50, regu_init=10):
     regu_trace = [regu]
     
     # Run main loop
-    print(max_iter)
     for it in range(max_iter):
-        print(it)
         # Backward and forward pass
         k_trj, K_trj, expected_cost_redu = backward_pass(derivs, x_trj, u_trj, regu)
         x_trj_new, u_trj_new = forward_pass(env, x_trj, u_trj, k_trj, K_trj)
         # Evaluate new trajectory
         total_cost = cost_trj(x_trj_new, u_trj_new)
-        print(total_cost)
         cost_redu = cost_trace[-1] - total_cost
         redu_ratio = cost_redu / abs(expected_cost_redu)
         # Accept or reject iteration
@@ -284,7 +279,6 @@ class ILQRModelPredictivePolicy:
                 self._sub_policies.append(ILQRPlaybackPolicy.load_state(d))
             else:
                 self._sub_policies.append(None)
-
 
     def predict(self, s):
         policy = self._sub_policies[-1]
