@@ -31,7 +31,6 @@ def get_ppo_model(env):
     model = PPO("MlpPolicy", env)
     return model
 
-
 class RLPolicyWrapper:
     def __init__(self, model):
         self.model = model

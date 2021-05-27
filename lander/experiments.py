@@ -13,6 +13,8 @@ from tqdm import tqdm
 
 from lander.lunar_lander import LunarLander
 
+SEED_MAX = 100000
+
 class LunarLanderRunner:
     def __init__(self, env, policy, max_iters=400):
         self.env = env
@@ -29,15 +31,22 @@ class LunarLanderRunner:
             'total_reward': None,
             'total_fuel': None,
             'ilqr_final_cost': None,
+            'sim_states': None,
+            'sim_actions': None,
         }
     
-    def run(self, render=False):
-        obs = self.env.get_state()
+    def run(self, seed, render=False):
+        self.env.seed(seed)
+        obs = self.env.reset()
         num_steps = 0
         total_reward = 0
         total_fuel = 0
+        xs = []
+        us = []
         for i in range(self.max_iters):
             action = self.policy.predict(obs)
+            xs.append(self.env.get_state())
+            us.append(action)
             obs, reward, done, info = self.env.step(action)
             if render:
                 self.env.render()
@@ -56,7 +65,9 @@ class LunarLanderRunner:
         self.data['end_state'] = self.env.get_state().tolist()
         self.data['total_reward'] = int(total_reward)
         self.data['total_fuel'] = float(total_fuel)
-
+        self.data['sim_states'] = np.array(xs).astype(float).tolist()
+        self.data['sim_actions'] = np.array(us).astype(float).tolist()
+        
         self.env.close()
     
     def update_ilqr_final_cost(self, cost):
@@ -65,81 +76,78 @@ class LunarLanderRunner:
     def get_metrics(self):
         return self.data
 
-def calc_stats(runs, show=True):
-    runs_np = {
-            'inside_helipad': None,
-            'land_upright': None,
-            'land_slowly': None,
-            'touched_ground': None,
-            'out_of_bounds': None,
-            'num_steps': None,
-            'end_state': None,
-            'total_reward': None,
-            'total_fuel': None,
-            'ilqr_final_cost': None
-        }
+def calc_stats(runs=None, metrics=None):
+    metrics_np = {
+        'inside_helipad': None,
+        'land_upright': None,
+        'land_slowly': None,
+        'touched_ground': None,
+        'out_of_bounds': None,
+        'num_steps': None,
+        'end_state': None,
+        'total_reward': None,
+        'total_fuel': None,
+        'ilqr_final_cost': None,
+        'sim_states': None,
+        'sim_actions': None
+    }
     
-    for run in runs:
-        metrics = run.get_metrics()
-        for name, val in metrics.items():
+    if metrics is None:
+        metrics = [r.get_metrics() for r in runs]
+    
+    for m in metrics:
+        for name, val in m.items():
             if val is not None:
-                if runs_np[name] is None:
-                    runs_np[name] = []
+                if metrics_np[name] is None:
+                    metrics_np[name] = [val]
                 else:
-                    runs_np[name].append(val)
+                    metrics_np[name].append(val)
     
+    ignore = ['sim_states', 'sim_actions']
     stats = {}
-    for metric_name in runs_np:
-        if runs_np[metric_name] is not None:
-            stats[metric_name] = np.average(np.array(runs_np[metric_name]), axis=0)
-    
-    if show:
-        print("Averages")
-        print(stats)
+    for name in metrics_np:
+        if name not in ignore and metrics_np[name] is not None:
+            stats[name] = np.average(np.array(metrics_np[name]), axis=0)
 
-        reward = runs_np['total_reward']
-        plt.hist(reward)
-        plt.title("Lunar Lander Reward")
-        plt.show()
-
-        fuel = runs_np['total_fuel']
-        plt.hist(fuel)
-        plt.title("Lunar Lander Fuel")
-        plt.show()
-
-        costs = runs_np['ilqr_final_cost']
-        if costs is not None:
-            plt.hist(costs)
-            plt.title("Lunar Lander ILQR Final Cost")
-            plt.show()
-
-    return runs_np, stats
+    return metrics_np, stats
 
 def run_ilqr_experiments(num_runs=50, num_steps=150):
     from lander.ilqr import ILQRPlaybackPolicy, run_ilqr
 
+    seed_rng = np.random.RandomState(0)
     env = LunarLander()
 
     runners = []
     for _ in tqdm(range(num_runs)):
+        seed = seed_rng.randint(0, SEED_MAX)
+
+        env.seed(seed)
         env.reset()
         x_trj, u_trj, cost_trace, *_ = run_ilqr(env, num_steps)
         policy = ILQRPlaybackPolicy(x_trj, u_trj)
         runner = LunarLanderRunner(env, policy)
-        runner.run()
+
+        runner.run(seed)
         runner.update_ilqr_final_cost(cost_trace[-1])
         runners.append(runner)
     
     return runners
 
-def run_rl_experiments(policy, num_runs=50):
+def run_rl_experiments(model, num_runs=50):
+    from lander.ppo import RLPolicyWrapper
+
+    seed_rng = np.random.RandomState(0)
     env = LunarLander()
+
+    policy = RLPolicyWrapper(model)
 
     runners = []
     for _ in tqdm(range(num_runs)):
-        env.reset()
+        seed = seed_rng.randint(0, SEED_MAX)
+
         runner = LunarLanderRunner(env, policy)
-        runner.run()
+        
+        runner.run(seed)
         runners.append(runner)
     
     return runners
@@ -148,3 +156,7 @@ def save_runner_metrics(runners, fname):
     data = [r.get_metrics() for r in runners]
     with open(fname, 'w') as f:
         json.dump(data, f)
+
+def load_runner_metrics(fname):
+    with open(fname, 'r') as f:
+        return json.load(f)

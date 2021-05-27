@@ -1,10 +1,7 @@
-dataset/
 logs/
-experiments/
-weights/
-sessions/
 extra/
 old/
+images/
 
 .vscode/
 

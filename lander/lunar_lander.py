@@ -147,7 +147,13 @@ class LunarLander(gym.Env):
         self.x[2] /= self.raw_to_pix_scale[1]
         self.x[3] /= self.raw_to_pix_scale[1]
 
-        return self.x
+        state = self.x.copy()
+        state[0] *= self.raw_to_rl_scale[0]
+        state[1] *= self.raw_to_rl_scale[0]
+        state[2] *= self.raw_to_rl_scale[1]
+        state[3] *= self.raw_to_rl_scale[1]
+
+        return state
 
     def _create_particle(self, mass, x, y, ttl):
         p = self.world.CreateDynamicBody(
@@ -276,12 +282,12 @@ class LunarLander(gym.Env):
             #     if np.linalg.norm(f) == 0:
             #         continue
             #     force_loc_world = loc + shift
-            #     p = self._create_particle(1e-12, force_loc_world[0], force_loc_world[1], u_i * 0.5)
+            #     p = self._create_particle(1, force_loc_world[0], force_loc_world[1], u_i * 3)
             #     impulse = -f / f_lim * 25 * 1e30
             #     # if np.linalg.norm(impulse) > 50:
             #     #     impulse /= np.linalg.norm(impulse)
             #     # print(u_i)
-            #     print(impulse)
+            #     # print(impulse)
             #     #print(impulse, u_i)
             #     #print(p.mass)
             #     p.ApplyForceToCenter(impulse, True)
@@ -313,7 +319,7 @@ class LunarLander(gym.Env):
             reward = 0
             done = True
             if self.detect_too_long():
-                reward -= 15
+                reward -= 30
             if self.detect_inside_helipad():
                 reward += 70
                 if self.detect_land_upright():
@@ -393,12 +399,14 @@ def heuristic(x):
 
 def demo_heuristic_lander(env, render=False):
     total_reward = 0
+    total_fuel = 0
     steps = 0
     s = env.reset()
     while True:
         a = heuristic(s)
         s, r, done, info = env.step(a)
         total_reward += r
+        total_fuel += info['fuel']
 
         if render:
             still_open = env.render()
@@ -407,7 +415,7 @@ def demo_heuristic_lander(env, render=False):
         
         if steps % 20 == 0 or done:
             print("observations:", " ".join(["{:+0.3f}".format(x) for x in s]))
-            print("step {} total_reward {:+0.3f}".format(steps, total_reward))
+            print("step {} total_reward {:+0.3f} total fuel {:+0.3f}".format(steps, total_reward, total_fuel))
         steps += 1
         if done:
             break
